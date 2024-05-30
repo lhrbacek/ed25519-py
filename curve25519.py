@@ -42,6 +42,14 @@ def _raw_curve25519(base, n):
     for i in reversed(range(256)):
         bit = bool(n & (1 << i))
         mP, m1P = _const_time_swap(mP, m1P, bit)
+
+        if i >= 247:
+            print("x1: ", hex(mP[0]))
+            print("z1: ", hex(mP[1]))
+            print("x2: ", hex(m1P[0]))
+            print("z2: ", hex(m1P[1]))
+            print("--------------------")
+
         mP, m1P = _point_double(mP), _point_add(mP, m1P, one)
         mP, m1P = _const_time_swap(mP, m1P, bit)
 
@@ -50,3 +58,32 @@ def _raw_curve25519(base, n):
     #inv_z = pow(z, curve25519_P - 2, curve25519_P)
     #return (x * inv_z) % curve25519_P
     return x, z, x1, z1
+
+
+# from https://gist.github.com/nickovs/cc3c22d15f239a2640c185035c06f8a3
+# base - x coordinate of point as bytearray/bytes in big endian (msb on left)
+# n - scalar
+#
+# Usage:
+#    point = bytearray(bytes.fromhex('7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed'))
+#    g = scamult_once_curve25519(point, 0)
+#    print(hex(g))
+#
+def scamult_once_curve25519(base, n):
+    """Raise the point base to the power n, return x of mP without conoversion back to affine"""
+    Px = int.from_bytes(base, byteorder='big')
+    zero = (1, 0)
+    one = (Px, 1)
+    mP, m1P = zero, one
+
+    for i in reversed(range(1)):
+        bit = bool(n & (1 << i))
+        mP, m1P = _const_time_swap(mP, m1P, bit)
+        mP, m1P = _point_double(mP), _point_add(mP, m1P, one)
+        mP, m1P = _const_time_swap(mP, m1P, bit)
+
+    x, z = mP
+    x1, z1 = m1P
+    #inv_z = pow(z, curve25519_P - 2, curve25519_P)
+    #return (x * inv_z) % curve25519_P
+    return x

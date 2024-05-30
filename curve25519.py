@@ -65,8 +65,8 @@ def _raw_curve25519(base, n):
 # n - scalar
 #
 # Usage:
-#    point = bytearray(bytes.fromhex('7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed'))
-#    g = scamult_once_curve25519(point, 0)
+#    point = bytearray(bytes.fromhex('010203'))
+#    g = scamult_once_curve25519(point, 1)
 #    print(hex(g))
 #
 def scamult_once_curve25519(base, n):

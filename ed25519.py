@@ -2,8 +2,10 @@ from Crypto.PublicKey import ECC
 from Crypto.Hash import SHA512
 from Crypto.Signature import eddsa
 from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives import serialization
 
 from curve25519 import _raw_curve25519
+from curve25519 import scamult_once_curve25519
 
 class Ed25519:
     p: int = 2 ** 255 - 19
@@ -141,38 +143,161 @@ def y_recovery(x, y, X1, Z1, X2, Z2): # P=(x,y,1), [k]P=(X1:Z1), [k+1]P=(X2:Z2)
 # b=256
 # 3 hashes, 1 scamult, 1 coordinates conversion (1 inversion), 2 or 3 modulos, arithmetics in the end
 def my_eddsa_sign(B: ECC.EccPoint, priv_k: bytes, A_comp: bytes, M: bytes):
+
+    print("========== Python Sign() ==========")
+
     L = int.from_bytes(Ed25519.L_bytes, byteorder='big')
 
     h = SHA512.new(data=priv_k).digest()                                    # 1) h = H(priv_k)
     s = int.from_bytes(h[0:32], byteorder='little')                         # s = h[0:32]
                                                                             # 1.5) pruning according to RFC8032
+    #print("s: ", hex(s))
+    
     s &= (1 << 254) - 8                                                     # clear the lowest three bits of the first octet
     s |= (1 << 254)                                                         # set the second highest bit of the last octet (the highest bit is already clear I suppose)
 
-    r = SHA512.new(data=(h[32:64] + M)).digest()                            # 2) r = H(k[32:64] || M)
-    r = int.from_bytes(r, byteorder='little')
-    r = r % L                                                               # for efficiency according to RFC8032 (and now it has to be here because of mont scamult)
+    #print("s cleared: ", hex(s))
     
+    r = SHA512.new(data=(h[32:64] + M)).digest()                            # 2) r = H(k[32:64] || M)
+    #print("r: ", r.hex())
+    r = int.from_bytes(r, byteorder='little')
+    #print("r: ", hex(r))
+    r = r % L
+    #r = 43690                                                                 # for efficiency according to RFC8032 (and now it has to be here because of mont scamult)
+    print("r_mod_l: ", bytearray(int.to_bytes(r, length=32, byteorder="little")).hex())
+
                                                                             # 3) R = [r]B
-    #R = r * B                                                               # just for comparison with library
+    R = r * B                                                               # just for comparison with library
 
     Bmu = Ed25519.G_ma_u                                                    # precomputed generator G in Montgomery affine
     Bmv = Ed25519.G_ma_v
-    rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, r)                      # Curve25519 scamult, returns [r]B, [r+1]B, in Montgomery projective
+    rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, r, 255)                      # Curve25519 scamult, returns [r]B, [r+1]B, in Montgomery projective
+
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, r, 250)
+
+    # my_r1 = int("aaaa", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r1, 15)
+    
+    # my_r2 = int("aa", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r2, 7)
+
+    # my_r3 = int("bf", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r3, 7)
+
+    # my_r4 = int("40", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r4, 7)
+
+    # my_r5 = int("55", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r5, 6)
+
+    # my_r6 = int("81", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r6, 7)
+
+    # my_r7 = int("d4", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r7, 7)
+    
+    # my_r8 = int("f8", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r8, 7)
+
+    # my_r9 = int("1f", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r9, 7)
+
+    # my_r10 = int("3", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r10, 2)
+
+    # my_r11 = int("3", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r11, 3)
+
+    # my_r12 = int("3", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r12, 4)
+
+    # my_r12 = int("1", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r12, 1)
+
+    # my_r12 = int("7", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r12, 3)
+
+    # my_r12 = int("2", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r12, 2)
+
+    # my_r12 = int("6", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r12, 3)
+
+    # my_r12 = int("e", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r12, 4)
+
+    # my_r12 = int("4", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r12, 3)
+
+    # my_r12 = int("c", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r12, 4)
+
+    # my_r12 = int("8", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r12, 4)
+
+    # my_r12 = int("18", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r12, 5)
+
+    # my_r12 = int("7f", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r12, 7)
+
+    # my_r12 = int("41", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r12, 7)
+
+    # my_r12 = int("55", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r12, 7)
+
+    # my_r12 = int("56", 16)
+    # rBmU, rBmW, r1BmU, r1BmW = _raw_curve25519(Bmu, my_r12, 7)
+
+
+
+
+
+
+
+    print("----scamult---")
+    print("x1: ", hex(rBmU))
+    print("z1: ", hex(rBmW))
+    print("--------------")
+    print("x2: ", hex(r1BmU))
+    print("z2: ", hex(r1BmW))
+    print("x : ", hex(Bmu))
+    print("y : ", hex(Bmv))
+    # print("----scamult: X*Z, reduced---")
+    # print("x1: ", hex((rBmU*rBmW) % (2 ** 255 - 19)))
+    # print("z1: ", hex(rBmW))
+    # print("x2: ", hex(r1BmU))
+    # print("z2: ", hex(r1BmW))
+    # print("x : ", hex(Bmu))
+    # print("y : ", hex(Bmv))
+
+
+    # print("----y_recovery----")
     rBmU, rBmV, rBmW = y_recovery(Bmu, Bmv, rBmU, rBmW, r1BmU, r1BmW)       # recovery of y (V) coordinate of [r]B
+    # print("x1: ", hex(rBmU))
+    # print("z1: ", hex(rBmW))
+    # print("y0: ", hex(rBmV))
     Rx, Ry = point_conversion_mp_ea(rBmU, rBmV, rBmW)                       # conversion of [r]B to Twisted Edwards affine
 
-    R = ECC.EccPoint(Rx, Ry, curve='Ed25519')                               
+        
+    #print("R edwards (pycryptodome) scamult:    ", hex(int(R.x)), hex(int(R.y)))
+    #print("R montgomery (my conversion) scamult:", hex(Rx), hex(Ry))
     
-    #print("R edwards (pycryptodome) scamult:    ", int(R.x), int(R.y))
-    #print("R montgomery (my conversion) scamult:", Rx, Ry)
+    R = ECC.EccPoint(Rx, Ry, curve='Ed25519')                               
+
 
     R_comp = point_compress(R, Ed25519.p)                                   # 3.5) encoded R' = r*B
     
     k = SHA512.new(data=(R_comp + A_comp + M)).digest()                     # 4) k = H(R'||A'||M)
+    #print("k: ", k.hex())
     k = int.from_bytes(k, byteorder='little') % L                           # modulo for efficiency according to RFC8032
-    
+    #print("k_mod_l: ", hex(k))
+    k_mul_s = (k * s) % L
+    #print("k_mul_s: ", hex(k_mul_s))
+    S = (r + k_mul_s) % L
     S = (r + k * s) % L                                                     # 5) S = (r + H(R'||A'||M)*s) mod l
+    #print("S: ", hex(S))
     
     return (R_comp + (int.to_bytes(S, length=32, byteorder='little')))      # 6) return (R, S) concatenated
 
@@ -202,49 +327,100 @@ def my_eddsa_verify(signature: bytes, A_comp: bytes, B: ECC.EccPoint, M: bytes):
 
 if __name__ == "__main__":
 
-    cryptography_private_key = ed25519.Ed25519PrivateKey.generate()
-    cryptodome_key = eddsa.import_private_key(cryptography_private_key.private_bytes_raw())
+    testvec1_priv_k = bytes.fromhex('9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60')
+    cryptography_private_key = ed25519.Ed25519PrivateKey.from_private_bytes(testvec1_priv_k)
+    cryptodome_key = eddsa.import_private_key(testvec1_priv_k)
+
+    #cryptography_private_key = ed25519.Ed25519PrivateKey.generate()
+    #cryptodome_key = eddsa.import_private_key(cryptography_private_key.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()))
 
     message = b'this is mesidz'
+    message = b''
     A_comp =  point_compress(cryptodome_key.pointQ, Ed25519.p)
 
 
-    print('===MY WHOLE===')
+    #print('===MY WHOLE===')
+    my_priv_key = bytearray(cryptodome_key.seed)
+    #print("my_priv_key:", bytes(my_priv_key).hex())
+    h = SHA512.new(data=my_priv_key).digest()
+    #print("hash:", h.hex())
     my_signature = my_eddsa_sign(Ed25519.G, cryptodome_key.seed, A_comp, message)
-    print(my_eddsa_verify(my_signature, A_comp, Ed25519.G, message))
+    #print(my_eddsa_verify(my_signature, A_comp, Ed25519.G, message))
 
 
-    print('===CRYPTODOME WHOLE===')
+    #print('===CRYPTODOME WHOLE===')
     signer = eddsa.new(cryptodome_key, 'rfc8032')
     signature = signer.sign(message)
     verifier = eddsa.new(cryptodome_key, 'rfc8032')
     try:
         verifier.verify(message, signature)
-        print("The message is authentic.")
+        #print("The message is authentic.")
     except ValueError:
         print("The message is not authentic.")
 
 
-    print('===CRYPTODOME SIGN MY VERIFY===')
-    print(my_eddsa_verify(signature, A_comp, Ed25519.G, message))
+    #print('===CRYPTODOME SIGN MY VERIFY===')
+    #print(my_eddsa_verify(signature, A_comp, Ed25519.G, message))
 
 
-    print('===MY SIGN CRYPTODOME VERIFY===')
+    #print('===MY SIGN CRYPTODOME VERIFY===')
     try:
         verifier.verify(message, my_signature)
-        print("The message is authentic.")
+        #print("The message is authentic.")
     except ValueError:
-        print("The message is not authentic.")
+        #print("The message is not authentic.")
+        pass
 
 
-    print('===CRYPTOGRAPHY WHOLE===')
+    #print('===CRYPTOGRAPHY WHOLE===')
     cryptography_signature = cryptography_private_key.sign(message)
     public_key = cryptography_private_key.public_key()
     public_key.verify(cryptography_signature, message)
-    print('OK if no exception')
+    #print('OK if no exception')
 
 
-    print("-----------------------")
-    print('My signature:           ', my_signature.hex())
-    print('Pycryptodome signature: ', signature.hex())
-    print('Cryptography signature: ', cryptography_signature.hex())
+    # print("-----------------------")
+    # print('My signature:           ', my_signature.hex())
+    # print('Pycryptodome signature: ', signature.hex())
+    # print('Cryptography signature: ', cryptography_signature.hex())
+
+    #print("============================")
+    # my_L = int.from_bytes(bytes.fromhex('eed3f55c1a631258d69cf7a2def9de14000000000000000000000000000000100000000000000000000000000000001000000000000000000000000000000010'), byteorder='little')
+    # L = int.from_bytes(Ed25519.L_bytes, byteorder='big')
+    # L67 = L - 67
+    # L50 = L - 50
+    # L117 = L - 117
+    # print("L67", hex(L67))
+    # print("L50", hex(L50))
+    # Lsum = (L67 + L50)# % L
+    # print("LSUM", hex(Lsum))
+    # #print(hex(L117))
+    # print("LsumMODl", hex(Lsum % L))
+    
+    # Lrev = bytearray(Ed25519.L_bytes)
+    # Lrev.reverse()
+    # print(bytes(Lrev).hex())
+
+    # print(hex(my_L % L))
+
+    point = bytearray(bytes.fromhex('010203'))
+    g = scamult_once_curve25519(point, 1)
+    #print(hex(g))
+
+
+    p = 2 ** 255 - 19
+    L = int.from_bytes(Ed25519.L_bytes, byteorder='big')
+    a_bytes = bytes.fromhex('0cc83dc8a9282b8ca56a2b10a67d99c5804949b2e34cec272f1a9f5dcb63b52d')
+    a_int = int.from_bytes(a_bytes, byteorder='little')
+    b_bytes = bytes.fromhex('6f0677125ffef2299844dadf5622c7a2f17ba12190a1fe7a0930519ca32560a9')
+    b_int = int.from_bytes(b_bytes, byteorder='big')
+    # b1_bytes = bytes.fromhex('06fb6e147149b10000')
+    # b1_int = int.from_bytes(b1_bytes, byteorder='big')
+    # print("L:      ", L)
+    # print("p:     ", p)
+    # print("a:     ", a_int)
+    # print("b:     ", b_int)
+    # #print("b1:    ", b1_int)
+    # print("p - a: ", p - a_int)
+    # print("L - a: ", L - a_int)
+    #print("p - b1:", p - b1_int)

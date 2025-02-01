@@ -43,12 +43,12 @@ def _raw_curve25519(base, n):
         bit = bool(n & (1 << i))
         mP, m1P = _const_time_swap(mP, m1P, bit)
 
-        if i >= 247:
-            print("x1: ", hex(mP[0]))
-            print("z1: ", hex(mP[1]))
-            print("x2: ", hex(m1P[0]))
-            print("z2: ", hex(m1P[1]))
-            print("--------------------")
+        #if i >= 247:
+        #    print("x1: ", hex(mP[0]))
+        #    print("z1: ", hex(mP[1]))
+        #    print("x2: ", hex(m1P[0]))
+        #    print("z2: ", hex(m1P[1]))
+        #    print("--------------------")
 
         mP, m1P = _point_double(mP), _point_add(mP, m1P, one)
         mP, m1P = _const_time_swap(mP, m1P, bit)

@@ -1,5 +1,6 @@
 from Crypto.PublicKey import ECC
 from Crypto.Hash import SHA512
+from Crypto.Hash import SHAKE256
 from Crypto.Signature import eddsa
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
@@ -151,23 +152,23 @@ def my_eddsa_sign(B: ECC.EccPoint, priv_pub_key: bytearray, M: bytes):
 
     L = int.from_bytes(Ed25519.L_bytes, byteorder='big')
 
-    h = SHA512.new(data=priv_k).digest()                                    # 1) h = H(priv_k)
+    #h = SHA512.new(data=priv_k).digest()                                    # 1) h = H(priv_k)
+    h = SHAKE256.new(data=priv_k).read(64)
     s = int.from_bytes(h[0:32], byteorder='little')                         # s = h[0:32]
                                                                             # 1.5) pruning according to RFC8032
     
-    #print("s: ", hex(s))
+    #print('s: ', bytearray(int.to_bytes(s, length=32, byteorder="little")).hex())
 
     s &= (1 << 254) - 8                                                     # clear the lowest three bits of the first octet
     s |= (1 << 254)                                                         # set the second highest bit of the last octet (the highest bit is already clear I suppose)
 
     #print("s cleared: ", hex(s))
 
-    r = SHA512.new(data=(h[32:64] + M)).digest()                            # 2) r = H(k[32:64] || M)
-    #print("r: ", r.hex())
+    #r = SHA512.new(data=(h[32:64] + M)).digest()                            # 2) r = H(k[32:64] || M)
+    r = SHAKE256.new(data=(h[32:64] + M)).read(64)
     r = int.from_bytes(r, byteorder='little')
+    #print('r: ', bytearray(int.to_bytes(r, length=32, byteorder="little")).hex())
     r = r % L                                                               # for efficiency according to RFC8032 (and now it has to be here because of mont scamult)
-    #print("r: ", hex(r))
-    #r = 43690
     #print("r_mod_l: ", bytearray(int.to_bytes(r, length=32, byteorder="little")).hex())
 
                                                                             # 3) R = [r]B
@@ -183,8 +184,8 @@ def my_eddsa_sign(B: ECC.EccPoint, priv_pub_key: bytearray, M: bytes):
     
     #print("R edwards (pycryptodome) scamult:    ", int(R.x), int(R.y))
     #print("R montgomery (my conversion) scamult:", Rx, Ry)
-    print('x_ea', bytearray(int.to_bytes(Rx, length=32, byteorder="little")).hex())
-    print('y_ea', bytearray(int.to_bytes(Ry, length=32, byteorder="little")).hex())
+    #print('x_ea', bytearray(int.to_bytes(Rx, length=32, byteorder="little")).hex())
+    #print('y_ea', bytearray(int.to_bytes(Ry, length=32, byteorder="little")).hex())
     #print('Rx_ea', bytearray(int.to_bytes(int(R.x) % Ed25519.p, length=32, byteorder="little")).hex())
     #print('Ry_ea', bytearray(int.to_bytes(int(R.y) % Ed25519.p, length=32, byteorder="little")).hex())
 
@@ -192,11 +193,12 @@ def my_eddsa_sign(B: ECC.EccPoint, priv_pub_key: bytearray, M: bytes):
     R_comp = point_compress(R, Ed25519.p)                                   # 3.5) encoded R' = r*B
     #print('R_comp:', R_comp.hex())
     
-    k = SHA512.new(data=(R_comp + A_comp + M)).digest()                     # 4) k = H(R'||A'||M)
+    #k = SHA512.new(data=(R_comp + A_comp + M)).digest()                     # 4) k = H(R'||A'||M)
+    k = SHAKE256.new(data=(R_comp + A_comp + M)).read(64)
     #print("k: ", k.hex())
     k = int.from_bytes(k, byteorder='little') % L                           # modulo for efficiency according to RFC8032
+    #print('k_mod_l: ', bytearray(int.to_bytes(k, length=32, byteorder="little")).hex())
     
-    #print("k_mod_l: ", hex(k))
     k_mul_s = (k * s) % L
     #print("k_mul_s: ", hex(k_mul_s))
     S = (r + k_mul_s) % L
@@ -219,7 +221,8 @@ def my_eddsa_verify(signature: bytes, A_comp: bytes, B: ECC.EccPoint, M: bytes):
     if A is None:
         raise Exception('Error when decompressing in verify')
     
-    k = SHA512.new(data=(R_comp + A_comp + M)).digest()          # 2) k = H(R'||A'||M)
+    #k = SHA512.new(data=(R_comp + A_comp + M)).digest()          # 2) k = H(R'||A'||M)
+    k = SHAKE256.new(data=(R_comp + A_comp + M)).read(64)
     k = int.from_bytes(k, byteorder='little')
 
     SB = S * B                                                   # SB = [S]B
@@ -235,27 +238,40 @@ if __name__ == "__main__":
     #cryptography_private_key = ed25519.Ed25519PrivateKey.generate()
     #cryptodome_key = eddsa.import_private_key(cryptography_private_key.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()))
 
-    message = b'this is mesidz'
     message = b''
-    message = bytes.fromhex('aa11ccdd')
-    #message = b''
+    message = bytes.fromhex('aa11ccddeeffeeffee')
 
-    print('msg:', message.hex())
+    L = int.from_bytes(Ed25519.L_bytes, byteorder='big')
 
     A_comp =  point_compress(cryptodome_key.pointQ, Ed25519.p)
 
+    # seed_hash = SHA512.new(data=cryptodome_key.seed).digest()
+    # seed_hash_int = int.from_bytes(seed_hash[0:32], byteorder='little')# % L
+    # seed_hash_int &= (1 << 254) - 8
+    # seed_hash_int |= (1 << 254)
+    
+    #A = seed_hash_int * Ed25519.G
+    #A_comp = point_compress(A, Ed25519.p)
+
+    seed_hash = SHAKE256.new(data=cryptodome_key.seed).read(64)
+    seed_hash_int = int.from_bytes(seed_hash[0:32], byteorder='little')
+    seed_hash_int &= (1 << 254) - 8
+    seed_hash_int |= (1 << 254)
+    A_shake = seed_hash_int * Ed25519.G
+    A_comp_shake = point_compress(A_shake, Ed25519.p)
+    
 
     print('===MY WHOLE===')
     my_priv_key = bytearray(cryptodome_key.seed)
-    #print("my_priv_key:", bytes(my_priv_key).hex())
     #print("A_comp:", A_comp.hex())
-    h = SHA512.new(data=my_priv_key).digest()
-    #print("hash:", h.hex())
     my_priv_pub_key = my_priv_key.copy()
-    my_priv_pub_key.extend(bytearray(A_comp))
+    #my_priv_pub_key.extend(bytearray(A_comp))
+    my_priv_pub_key.extend(bytearray(A_comp_shake))
+    
     #print("my_priv_pub_key:", bytes(my_priv_pub_key).hex())
     my_signature = my_eddsa_sign(Ed25519.G, my_priv_pub_key, message)
-    print(my_eddsa_verify(my_signature, A_comp, Ed25519.G, message))
+    #print(my_eddsa_verify(my_signature, A_comp, Ed25519.G, message))
+    print(my_eddsa_verify(my_signature, A_comp_shake, Ed25519.G, message))
 
 
     print('===CRYPTODOME WHOLE===')
